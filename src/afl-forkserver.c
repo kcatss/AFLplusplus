@@ -52,6 +52,117 @@
 #ifdef __linux__
   #include <dlfcn.h>
 
+#include "rb.h"
+#include "rb_data.h"
+#include <afl-fuzz.h>
+#define BUFFER_SIZE 1024
+
+CallStack *createCallStack() {
+  CallStack *callStack = (CallStack *)malloc(sizeof(CallStack));
+  if (callStack == NULL) { return NULL; }
+  callStack->stacks = NULL;
+  callStack->stackCount = 0;
+  return callStack;
+}
+
+void addCallStack(CallStack *callStack, const char *stack) {
+  callStack->stackCount++;
+  callStack->stacks = (char **)ck_realloc(
+      callStack->stacks, sizeof(char *) * callStack->stackCount);
+  callStack->stacks[callStack->stackCount - 1] = strdup(stack);
+}
+
+Callback *createCallback(const char *className, const char *methodName) {
+  Callback *callback = (Callback *)ck_alloc(sizeof(Callback));
+  if (callback == NULL) { return NULL; }
+  callback->className = strdup(className);
+  callback->methodName = strdup(methodName);
+  callback->callStack = createCallStack();
+  return callback;
+}
+
+void addCallback(CallbackList *list, Callback *callback) {
+  list->callbackCount++;
+  list->callbacks = (Callback *)ck_realloc(
+      list->callbacks, sizeof(Callback) * list->callbackCount);
+  list->callbacks[list->callbackCount - 1] = *callback;
+}
+
+void freeCallStack(CallStack *callStack) {
+  for (int i = 0; i < callStack->stackCount; i++) {
+    ck_free(callStack->stacks[i]);
+  }
+  ck_free(callStack->stacks);
+  ck_free(callStack);
+}
+
+void freeCallback(Callback *callback) {
+  ck_free(callback->className);
+  ck_free(callback->methodName);
+  freeCallStack(callback->callStack);
+}
+
+void freeCallbackList(CallbackList *list) {
+  for (int i = 0; i < list->callbackCount; i++) {
+    freeCallback(&list->callbacks[i]);
+  }
+  ck_free(list->callbacks);
+}
+
+void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
+  const CallbackList *list = fsrv->cb_list;
+  size_t              totalLength = 1;
+
+  for (int i = 0; i < list->callbackCount; i++) {
+    totalLength += strlen("Callback ClassMethod\n") +
+                   strlen(list->callbacks[i].className) + 1 +  // ":"
+                   strlen(list->callbacks[i].methodName) + 1;  //
+
+    if (list->callbacks[i].callStack->stackCount > 0) {
+      totalLength += strlen("CallStack\n");  // callStack 헤더 라인
+    }
+
+    for (int j = 0; j < list->callbacks[i].callStack->stackCount; j++) {
+      totalLength += strlen(list->callbacks[i].callStack->stacks[j]) + 1;  //
+    }
+  }
+
+  fsrv->stdout_buf = (u8 *)ck_alloc(totalLength);
+  if (!fsrv->stdout_buf) {
+    PFATAL("Failed to allocate memory for concatenated string");
+    exit(EXIT_FAILURE);
+  }
+
+  fsrv->stdout_buf[0] = '\0';  // 초기화
+
+  // 모든 문자열 합치기
+  for (int i = 0; i < list->callbackCount; i++) {
+    strcat(fsrv->stdout_buf, "Callback ClassMethod\n");
+    strcat(fsrv->stdout_buf, list->callbacks[i].className);
+    strcat(fsrv->stdout_buf, ":");  // methodName 뒤에 새 줄 추가
+    strcat(fsrv->stdout_buf, list->callbacks[i].methodName);
+    strcat(fsrv->stdout_buf, "\n");  // methodName 뒤에 새 줄 추가
+
+    if (list->callbacks[i].callStack->stackCount > 0) {
+      strcat(fsrv->stdout_buf, "CallStack\n");  //
+      for (int j = 0; j < list->callbacks[i].callStack->stackCount; j++) {
+        strcat(fsrv->stdout_buf, list->callbacks[i].callStack->stacks[j]);
+        strcat(fsrv->stdout_buf, "\n");  //
+      }
+    }
+    freeCallback(&list->callbacks[i]);
+  }
+
+  // 마무리
+  ck_free(list->callbacks);
+  ck_free(fsrv->cb_list);
+  // 해시 값 계산 및 출력
+
+  u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
+  fsrv->cb_hash = cksum;
+}
+
+
 /* function to load nyx_helper function from libnyx.so */
 
 nyx_plugin_handler_t *afl_load_libnyx_plugin(u8 *libnyx_binary) {
@@ -250,6 +361,9 @@ void afl_fsrv_init(afl_forkserver_t *fsrv) {
   fsrv->uses_asan = false;
 
   fsrv->init_child_func = fsrv_exec_child;
+  fsrv->cb_list = NULL;
+  fsrv->cb_hash = NULL;
+
   list_append(&fsrv_list, fsrv);
 
 }
@@ -283,6 +397,13 @@ void afl_fsrv_init_dup(afl_forkserver_t *fsrv_to, afl_forkserver_t *from) {
 
   fsrv_to->init_child_func = from->init_child_func;
   // Note: do not copy ->add_extra_func or ->persistent_record*
+
+  fsrv_to->cb_list = from->cb_list;
+
+  fsrv_to->fsrv_out_fd = from->fsrv_out_fd;
+  fsrv_to->cb_tree = from->cb_tree;
+  fsrv_to->stdout_buf = from->stdout_buf;
+  fsrv_to->cb_hash = from->cb_hash;
 
   list_append(&fsrv_list, fsrv_to);
 
@@ -455,7 +576,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
       WARNF("Fauxserver could not determine child's exit code. ");
 
     }
-
+    printf("[CGF] finished!!\n");
     /* Relay wait status to AFL pipe, then loop back. */
 
     if (write(FORKSRV_FD + 1, &status, 4) != 4) { exit(1); }
@@ -523,7 +644,7 @@ static void report_error_and_exit(int error) {
 void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
                     volatile u8 *stop_soon_p, u8 debug_child_output) {
 
-  int   st_pipe[2], ctl_pipe[2];
+  int   st_pipe[2], ctl_pipe[2], out_pipe[2];
   s32   status;
   s32   rlen;
   char *ignore_autodict = getenv("AFL_NO_AUTODICT");
@@ -532,6 +653,10 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
   if (unlikely(fsrv->nyx_mode)) {
 
     if (fsrv->nyx_runner != NULL) { return; }
+
+  if ((fsrv->cb_tree = rb_create(compare_func, destroy_func)) == NULL) {
+    PFATAL("cb_tree() create failed");
+  }
 
     if (!be_quiet) { ACTF("Spinning up the NYX backend..."); }
 
@@ -832,7 +957,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   }
 
-  if (pipe(st_pipe) || pipe(ctl_pipe)) { PFATAL("pipe() failed"); }
+  if (pipe(st_pipe) || pipe(ctl_pipe) || pipe(out_pipe) ) { PFATAL("pipe() failed"); }
 
   fsrv->last_run_timed_out = 0;
   fsrv->fsrv_pid = fork();
@@ -899,7 +1024,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
     if (!(debug_child_output)) {
 
-      dup2(fsrv->dev_null_fd, 1);
+      // dup2(fsrv->dev_null_fd, 1);
       dup2(fsrv->dev_null_fd, 2);
 
     }
@@ -919,11 +1044,14 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
     if (dup2(ctl_pipe[0], FORKSRV_FD) < 0) { PFATAL("dup2() failed"); }
     if (dup2(st_pipe[1], FORKSRV_FD + 1) < 0) { PFATAL("dup2() failed"); }
+    if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
 
     close(ctl_pipe[0]);
     close(ctl_pipe[1]);
     close(st_pipe[0]);
     close(st_pipe[1]);
+    close(out_pipe[0]);
+    close(out_pipe[1]);
 
     close(fsrv->out_dir_fd);
     close(fsrv->dev_null_fd);
@@ -967,9 +1095,11 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   close(ctl_pipe[0]);
   close(st_pipe[1]);
+  close(out_pipe[1]);
 
   fsrv->fsrv_ctl_fd = ctl_pipe[1];
   fsrv->fsrv_st_fd = st_pipe[0];
+  fsrv->fsrv_out_fd = out_pipe[0];
 
   /* Wait for the fork server to come up, but don't wait too long. */
 
@@ -1451,6 +1581,8 @@ void afl_fsrv_kill(afl_forkserver_t *fsrv) {
 
   close(fsrv->fsrv_ctl_fd);
   close(fsrv->fsrv_st_fd);
+  close(fsrv->fsrv_out_fd);
+
   fsrv->fsrv_pid = -1;
   fsrv->child_pid = -1;
 
@@ -1588,6 +1720,29 @@ afl_fsrv_write_to_testcase(afl_forkserver_t *fsrv, u8 *buf, size_t len) {
 
 }
 
+void processLine(u8 *line, CallbackList *list, Callback **currentCallback,
+                 s32 *inCallstack) {
+  if (strstr(line, "Callback Called!")) {
+    u8 className[100], methodName[100];
+    sscanf(line, "Callback Called! %[^:]:%s", className, methodName);
+    // 새 콜백 생성
+    *currentCallback = createCallback(className, methodName);
+  } else if (strstr(line, "CallStack Start")) {
+    *inCallstack = 1;
+  } else if (strstr(line, "CallStack End")) {
+    *inCallstack = 0;
+    if (*currentCallback != NULL) {
+      addCallback(list, *currentCallback);
+      *currentCallback = NULL;
+      // currentCallback은 리스트에 추가된 후 바로 다음 콜백을 위해 초기화하지
+      // 않음
+    }
+  } else if (*inCallstack && *currentCallback &&
+             !strstr(line, "for i in traceback.extract_stack")) {
+    addCallStack((*currentCallback)->callStack, line);
+  }
+}
+
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update afl->fsrv->trace_bits. */
 
@@ -1690,6 +1845,77 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     if (*stop_soon_p) { return 0; }
     RPFATAL(res, "Unable to request new process from fork server (OOM?)");
 
+  }
+
+  Callback *currentCallback = NULL;
+  s32       inCallstack = 0;
+  u8       *local_buf[BUFFER_SIZE];
+  memset(local_buf, BUFFER_SIZE, 0);
+
+  fd_set         readfds;
+  struct timeval tv;
+  int            retval;
+  ssize_t        bytesRead;
+
+  FD_ZERO(&readfds);
+  FD_SET(fsrv->fsrv_out_fd, &readfds);
+
+  tv.tv_usec = fsrv->exec_tmout;
+
+  u8    *accumulator = ck_alloc(BUFFER_SIZE);
+  size_t accumulated_size = BUFFER_SIZE;
+  u8    *lineStart;
+
+  // fsrv->stdout_buf = ck_realloc(fsrv->stdout_buf, BUFFER_SIZE);
+
+  fsrv->cb_list = (CallbackList *)ck_alloc(sizeof(CallbackList));
+  if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
+  fsrv->cb_list->callbacks = NULL;
+  fsrv->cb_list->callbackCount = 0;
+
+  retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
+
+  if (retval == -1) {
+    PFATAL("select()");
+  } else if (retval) {
+    while ((bytesRead = read(fsrv->fsrv_out_fd, local_buf, BUFFER_SIZE - 1)) >
+           0) {
+      local_buf[bytesRead] = '\0';
+      if (strstr(local_buf, "[CGF] finished!!") != NULL) {
+        break;  // "finish"
+      }
+
+      size_t new_size = accumulated_size + bytesRead;
+      accumulator = ck_realloc(accumulator, new_size);
+      if (unlikely(!accumulator)) { PFATAL("alloc"); }
+
+      strcat(accumulator, local_buf);  // Accumulate the read data
+      accumulated_size = new_size;
+
+      lineStart = accumulator;
+      char *lineEnd = NULL;
+      while ((lineEnd = strstr(lineStart, "\n")) != NULL) {
+        *lineEnd = '\0';  // Mark the end of the line
+        processLine(lineStart, fsrv->cb_list, &currentCallback, &inCallstack);
+        lineStart = lineEnd + 1;  // Move to the start of the next line
+      }
+      // Handle remaining data that doesn't end with a newline
+      size_t remaining = strlen(lineStart);
+      if (remaining > 0) {
+        memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
+        accumulated_size = remaining + BUFFER_SIZE;  // 크기 조정
+      } else {
+        *accumulator = '\0';
+        accumulated_size = BUFFER_SIZE;  // 크기 재조정
+      }
+    }
+
+    // Process any remaining data that doesn't end with a newline
+    if (strlen(accumulator) > 0) {
+      processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
+    }
+
+    hashAndPrintCallbackList(fsrv);
   }
 
 #ifdef AFL_PERSISTENT_RECORD

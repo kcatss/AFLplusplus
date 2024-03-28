@@ -32,7 +32,6 @@
 #include <stdbool.h>
 
 #include "types.h"
-#include "rb.h"
 
 #ifdef __linux__
 /**
@@ -97,28 +96,11 @@ nyx_plugin_handler_t *afl_load_libnyx_plugin(u8 *libnyx_binary);
 
 #endif
 
-typedef struct {
-    char **stacks;
-    int stackCount;
-} CallStack;
-
-typedef struct {
-    char *className;
-    char *methodName;
-    CallStack *callStack;
-} Callback;
-
-typedef struct {
-    Callback *callbacks;
-    int callbackCount;
-} CallbackList;
-
 typedef struct afl_forkserver {
 
   /* a program that includes afl-forkserver needs to define these */
 
   u8 *trace_bits;                       /* SHM with instrumentation bitmap  */
-  u8 *stdout_buf;
 
   s32 fsrv_pid,                         /* PID of the fork server           */
       child_pid,                        /* PID of the fuzzed program        */
@@ -130,8 +112,7 @@ typedef struct afl_forkserver {
 
       dev_null_fd,                      /* Persistent fd for /dev/null      */
       fsrv_ctl_fd,                      /* Fork server control pipe (write) */
-      fsrv_st_fd,                       /* Fork server status pipe (read)   */
-      fsrv_out_fd;                      /* Fork server standard output pipe (stdout)   */
+      fsrv_st_fd;                       /* Fork server status pipe (read)   */
 
   u32 exec_tmout;                       /* Configurable exec timeout (ms)   */
   u32 init_tmout;                       /* Configurable init timeout (ms)   */
@@ -206,10 +187,6 @@ typedef struct afl_forkserver {
   u8 fsrv_kill_signal;
 
   u8 persistent_mode;
-
-  CallbackList *cb_list;
-  rbtree *cb_tree;
-  u64 cb_hash;
 
 #ifdef __linux__
   nyx_plugin_handler_t *nyx_handlers;

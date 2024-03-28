@@ -1138,7 +1138,7 @@ void perform_dry_run(afl_state_t *afl) {
 
             simplify_trace(afl, afl->fsrv.trace_bits);
 
-            if (!has_new_bits(afl, afl->virgin_crash)) { break; }
+            if (!has_new_bits(afl)) { break; }
 
           }
 
