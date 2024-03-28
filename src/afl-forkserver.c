@@ -654,9 +654,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
     if (fsrv->nyx_runner != NULL) { return; }
 
-  if ((fsrv->cb_tree = rb_create(compare_func, destroy_func)) == NULL) {
-    PFATAL("cb_tree() create failed");
-  }
+
 
     if (!be_quiet) { ACTF("Spinning up the NYX backend..."); }
 
@@ -921,6 +919,10 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
   }
 
 #endif
+
+  if ((fsrv->cb_tree = rb_create(compare_func, destroy_func)) == NULL) {
+    PFATAL("cb_tree() create failed");
+  }
 
   if (!be_quiet) { ACTF("Spinning up the fork server..."); }
 
@@ -1903,10 +1905,10 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
       size_t remaining = strlen(lineStart);
       if (remaining > 0) {
         memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
-        accumulated_size = remaining + BUFFER_SIZE;  // 크기 조정
+        accumulated_size = remaining + BUFFER_SIZE; 
       } else {
         *accumulator = '\0';
-        accumulated_size = BUFFER_SIZE;  // 크기 재조정
+        accumulated_size = BUFFER_SIZE;  
       }
     }
 
