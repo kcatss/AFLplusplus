@@ -127,13 +127,13 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
   }
 
-  fsrv->stdout_buf = (u8 *)ck_alloc(totalLength);
+  fsrv->stdout_buf = (u8 *)ck_realloc(fsrv->stdout_buf, totalLength);
   if (!fsrv->stdout_buf) {
     PFATAL("Failed to allocate memory for concatenated string");
     exit(EXIT_FAILURE);
   }
 
-  fsrv->stdout_buf[0] = '\0';  // 초기화
+  memset(fsrv->stdout_buf, 0 ,totalLength );
 
   // 모든 문자열 합치기
   for (int i = 0; i < list->callbackCount; i++) {
