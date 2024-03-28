@@ -511,7 +511,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
     } else {
 
-      new_bits = has_new_bits_unclassified(afl, afl->virgin_bits);
+      new_bits = has_new_bits(afl);
 
       if (unlikely(new_bits)) { classified = 1; }
 
