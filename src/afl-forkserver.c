@@ -363,6 +363,7 @@ void afl_fsrv_init(afl_forkserver_t *fsrv) {
   fsrv->init_child_func = fsrv_exec_child;
   fsrv->cb_list = NULL;
   fsrv->cb_hash = NULL;
+  fsrv->stdout_buf = NULL;
 
   list_append(&fsrv_list, fsrv);
 
