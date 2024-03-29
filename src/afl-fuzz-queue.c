@@ -268,7 +268,7 @@ void create_alias_table(afl_state_t *afl) {
 
   afl->reinit_table = 0;
 
-  /*
+  
   #ifdef INTROSPECTION
     u8 fn[PATH_MAX];
     snprintf(fn, PATH_MAX, "%s/introspection_corpus.txt", afl->out_dir);
@@ -296,7 +296,7 @@ void create_alias_table(afl_state_t *afl) {
     }
 
   #endif
-  */
+  
   /*
   fprintf(stderr, "  entry  alias  probability  perf_score   weight
   filename\n"); for (i = 0; i < n; ++i) fprintf(stderr, "  %5u  %5u  %11u
