@@ -117,7 +117,6 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     totalLength += strlen("Callback ClassMethod\n") +
                    strlen(list->callbacks[i].className) + 1 +  // ":"
                    strlen(list->callbacks[i].methodName) + 1;  //
-
     if (list->callbacks[i].callStack->stackCount > 0) {
       totalLength += strlen("CallStack\n");  // callStack 헤더 라인
     }
@@ -142,7 +141,6 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     strcat(fsrv->stdout_buf, ":");  // methodName 뒤에 새 줄 추가
     strcat(fsrv->stdout_buf, list->callbacks[i].methodName);
     strcat(fsrv->stdout_buf, "\n");  // methodName 뒤에 새 줄 추가
-
     if (list->callbacks[i].callStack->stackCount > 0) {
       strcat(fsrv->stdout_buf, "CallStack\n");  //
       for (int j = 0; j < list->callbacks[i].callStack->stackCount; j++) {
@@ -152,7 +150,8 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
     freeCallback(&list->callbacks[i]);
   }
-
+  // printf("[CGF]Callback Print\n",fsrv->stdout_buf);
+  // printf("[CGF]%s\n",fsrv->stdout_buf);
   // 마무리
   ck_free(list->callbacks);
   ck_free(fsrv->cb_list);
@@ -160,6 +159,7 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
 
   u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
   fsrv->cb_hash = cksum;
+  printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
 }
 
 
@@ -1852,7 +1852,7 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
   Callback *currentCallback = NULL;
   s32       inCallstack = 0;
-  u8       *local_buf[BUFFER_SIZE];
+  u8       local_buf[BUFFER_SIZE];
   memset(local_buf, BUFFER_SIZE, 0);
 
   fd_set         readfds;
@@ -1875,15 +1875,17 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
   if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
   fsrv->cb_list->callbacks = NULL;
   fsrv->cb_list->callbackCount = 0;
-
+  // printf ("[CGF] before select\n");
   retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
-
+  // printf ("[CGF] after select\n");
   if (retval == -1) {
     PFATAL("select()");
   } else if (retval) {
+    // printf ("[CGF] before while\n");
     while ((bytesRead = read(fsrv->fsrv_out_fd, local_buf, BUFFER_SIZE - 1)) >
            0) {
       local_buf[bytesRead] = '\0';
+      // printf("[CGF] in loop\n");
       if (strstr(local_buf, "[CGF] finished!!") != NULL) {
         break;  // "finish"
       }
@@ -1912,7 +1914,7 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
         accumulated_size = BUFFER_SIZE;  
       }
     }
-
+    // printf("[CGF] out of loop\n");
     // Process any remaining data that doesn't end with a newline
     if (strlen(accumulator) > 0) {
       processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);

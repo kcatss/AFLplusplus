@@ -216,11 +216,11 @@ inline u8 has_new_bits(afl_state_t *afl) {
 	rbnode *node;
 	mydata *data;
 
-  // printf("[CBF]Hashed value: %lu in has_new_bits\n", query.cksum);
+  // printf("[CGF]Hashed value: %llu in has_new_bits\n", query.cksum);
 
   if ( rb_find(afl->fsrv.cb_tree, &query) != NULL){
     // already exist cb_hash
-    // printf("[CBF]Hashed value: %lu already exist\n", query.cksum);
+    // printf("[CGF]Hashed value: %llu already exist\n", query.cksum);
     ret = 0;
   }
   else{
@@ -229,7 +229,7 @@ inline u8 has_new_bits(afl_state_t *afl) {
           PFATAL("Can't Insert to Cbtree");
           return ret;
       }
-      // printf("[CBF]Hashed value: %lu interesting\n", query.cksum);
+      // printf("[CGF]Hashed value: %llu interesting in has new bits\n", query.cksum);
       ret = 2;
   }
   
