@@ -159,7 +159,7 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
 
   u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
   fsrv->cb_hash = cksum;
-  printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
+  // printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
 }
 
 
