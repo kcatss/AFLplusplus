@@ -205,38 +205,41 @@ void init_count_class16(void) {
    This function is called after every exec() on a fairly large buffer, so
    it needs to be fast. We do this in 32-bit and 64-bit flavors. */
 
-inline u8 has_new_bits(afl_state_t *afl) {
+inline u8 has_new_bits(afl_state_t *afl, u8 *virgin_map) {
+
+#ifdef WORD_SIZE_64
+
+  u64 *current = (u64 *)afl->fsrv.trace_bits;
+  u64 *virgin = (u64 *)virgin_map;
+
+  u32 i = ((afl->fsrv.real_map_size + 7) >> 3);
+
+#else
+
+  u32 *current = (u32 *)afl->fsrv.trace_bits;
+  u32 *virgin = (u32 *)virgin_map;
+
+  u32 i = ((afl->fsrv.real_map_size + 3) >> 2);
+
+#endif                                                     /* ^WORD_SIZE_64 */
+
   u8 ret = 0;
-  if (afl->fsrv.cb_hash == NULL)
-    return ret;
+  while (i--) {
 
-	mydata query;
-	query.cksum = afl->fsrv.cb_hash;
+    if (unlikely(*current)) discover_word(&ret, current, virgin);
 
-	rbnode *node;
-	mydata *data;
+    current++;
+    virgin++;
 
-  // printf("[CGF]Hashed value: %llu in has_new_bits\n", query.cksum);
-
-  if ( rb_find(afl->fsrv.cb_tree, &query) != NULL){
-    // already exist cb_hash
-    // printf("[CGF]Hashed value: %llu already exist\n", query.cksum);
-    ret = 0;
   }
-  else{
-      if ((data = makedata(afl->fsrv.cb_hash)) == NULL || (node = rb_insert(afl->fsrv.cb_tree, data)) == NULL) {
-          ck_free(data);
-          PFATAL("Can't Insert to Cbtree");
-          return ret;
-      }
-      // printf("[CGF]Hashed value: %llu interesting in has new bits\n", query.cksum);
-      ret = 2;
-  }
-  
+
+  if (unlikely(ret) && likely(virgin_map == afl->virgin_bits))
+    afl->bitmap_changed = 1;
 
   return ret;
 
 }
+
 
 /* A combination of classify_counts and has_new_bits. If 0 is returned, then the
  * trace bits are kept as-is. Otherwise, the trace bits are overwritten with
@@ -265,7 +268,7 @@ inline u8 has_new_bits_unclassified(afl_state_t *afl, u8 *virgin_map) {
 
 #endif                                                     /* ^WORD_SIZE_64 */
   classify_counts(&afl->fsrv);
-  return has_new_bits(afl);
+  return has_new_bits(afl, virgin_map);
 
 }
 
@@ -507,11 +510,11 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
     if (likely(classified)) {
 
-      new_bits = has_new_bits(afl);
+      new_bits = has_new_bits(afl, afl->virgin_bits);
 
     } else {
 
-      new_bits = has_new_bits(afl);
+      new_bits = has_new_bits_unclassified(afl, afl->virgin_bits);
 
       if (unlikely(new_bits)) { classified = 1; }
 
@@ -655,7 +658,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
         simplify_trace(afl, afl->fsrv.trace_bits);
 
-        if (!has_new_bits(afl)) { return keeping; }
+        if (!has_new_bits(afl, afl->virgin_tmout)) { return keeping; }
 
       }
 
@@ -780,7 +783,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
         simplify_trace(afl, afl->fsrv.trace_bits);
 
-        if (!has_new_bits(afl)) { return keeping; }
+        if (!has_new_bits(afl, afl->virgin_crash)) { return keeping; }
 
       }
 

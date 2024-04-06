@@ -81,7 +81,6 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
   if (unlikely(q->favored)) { weight *= 5; }
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
   if (unlikely(q->fs_redundant)) { weight *= 0.8; }
-  if (unlikely(q->custom)) { weight *= 5; }
 
   return weight;
 

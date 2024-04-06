@@ -157,8 +157,7 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
   ck_free(fsrv->cb_list);
   // 해시 값 계산 및 출력
 
-  u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
-  fsrv->cb_hash = cksum;
+
   // printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
 }
 
