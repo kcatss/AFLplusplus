@@ -535,7 +535,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
       close(fsrv->out_dir_fd);
       close(fsrv->dev_null_fd);
       close(fsrv->dev_urandom_fd);
-      close(out_pipe[0])
+      close(out_pipe[0]);
 
       if (fsrv->plot_file != NULL) {
 
@@ -1108,11 +1108,11 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   close(ctl_pipe[0]);
   close(st_pipe[1]);
-  close(out_pipe[1]);
+  // close(out_pipe[1]);
 
   fsrv->fsrv_ctl_fd = ctl_pipe[1];
   fsrv->fsrv_st_fd = st_pipe[0];
-  fsrv->fsrv_out_fd = out_pipe[0];
+  // fsrv->fsrv_out_fd = out_pipe[0];
 
   /* Wait for the fork server to come up, but don't wait too long. */
 
