@@ -494,6 +494,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
   unsigned char tmp[4] = {0, 0, 0, 0};
   pid_t         child_pid;
+  int   out_pipe[2];
 
   if (!be_quiet) { ACTF("Using Fauxserver:"); }
 
@@ -517,6 +518,8 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     if (read(FORKSRV_FD, &was_killed, 4) != 4) { exit(0); }
 
+    if (pipe(out_pipe) ) { PFATAL("pipe() failed"); }
+
     /* Create a clone of our process. */
 
     child_pid = fork();
@@ -527,9 +530,12 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     if (!child_pid) {  // New child
 
+      if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
+
       close(fsrv->out_dir_fd);
       close(fsrv->dev_null_fd);
       close(fsrv->dev_urandom_fd);
+      close(out_pipe[0])
 
       if (fsrv->plot_file != NULL) {
 
@@ -563,6 +569,9 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
       break;
 
     }
+
+    close(out_pipe[1]);
+    fsrv->fsrv_out_fd = out_pipe[0];
 
     /* In parent process: write PID to AFL. */
 
@@ -646,7 +655,7 @@ static void report_error_and_exit(int error) {
 void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
                     volatile u8 *stop_soon_p, u8 debug_child_output) {
 
-  int   st_pipe[2], ctl_pipe[2], out_pipe[2];
+  int   st_pipe[2], ctl_pipe[2];//, out_pipe[2];
   s32   status;
   s32   rlen;
   char *ignore_autodict = getenv("AFL_NO_AUTODICT");
@@ -961,7 +970,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   }
 
-  if (pipe(st_pipe) || pipe(ctl_pipe) || pipe(out_pipe) ) { PFATAL("pipe() failed"); }
+  if (pipe(st_pipe) || pipe(ctl_pipe)  ) { PFATAL("pipe() failed"); }
 
   fsrv->last_run_timed_out = 0;
   fsrv->fsrv_pid = fork();
@@ -1048,13 +1057,13 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
     if (dup2(ctl_pipe[0], FORKSRV_FD) < 0) { PFATAL("dup2() failed"); }
     if (dup2(st_pipe[1], FORKSRV_FD + 1) < 0) { PFATAL("dup2() failed"); }
-    if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
+    // if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
 
     close(ctl_pipe[0]);
     close(ctl_pipe[1]);
     close(st_pipe[0]);
     close(st_pipe[1]);
-    close(out_pipe[0]);
+    // close(out_pipe[0]);
     // close(out_pipe[1]);
 
     close(fsrv->out_dir_fd);
