@@ -150,8 +150,8 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
     freeCallback(&list->callbacks[i]);
   }
-  // printf("[CGF]Callback Print\n",fsrv->stdout_buf);
-  // printf("[CGF]%s\n",fsrv->stdout_buf);
+  // printf("[CGF]Callback Print\n");
+  // printf("[CGF]\n%s\n",fsrv->stdout_buf);
   // 마무리
   ck_free(list->callbacks);
   ck_free(fsrv->cb_list);
@@ -577,11 +577,12 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
       WARNF("Fauxserver could not determine child's exit code. ");
 
     }
+    
     printf("[CGF] finished!!\n");
     /* Relay wait status to AFL pipe, then loop back. */
-
+    
     if (write(FORKSRV_FD + 1, &status, 4) != 4) { exit(1); }
-
+    
   }
 
 }
@@ -1054,7 +1055,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
     close(st_pipe[0]);
     close(st_pipe[1]);
     close(out_pipe[0]);
-    close(out_pipe[1]);
+    // close(out_pipe[1]);
 
     close(fsrv->out_dir_fd);
     close(fsrv->dev_null_fd);
@@ -1850,7 +1851,42 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
   }
 
-  Callback *currentCallback = NULL;
+
+#ifdef AFL_PERSISTENT_RECORD
+  // end of persistent loop?
+  if (unlikely(fsrv->persistent_record &&
+               fsrv->persistent_record_pid != fsrv->child_pid)) {
+
+    fsrv->persistent_record_pid = fsrv->child_pid;
+    u32 idx, val;
+    if (unlikely(!fsrv->persistent_record_idx))
+      idx = fsrv->persistent_record - 1;
+    else
+      idx = fsrv->persistent_record_idx - 1;
+    val = fsrv->persistent_record_len[idx];
+    memset((void *)fsrv->persistent_record_len, 0,
+           fsrv->persistent_record * sizeof(u32));
+    fsrv->persistent_record_len[idx] = val;
+
+  }
+
+#endif
+
+  if (fsrv->child_pid <= 0) {
+
+    if (*stop_soon_p) { return 0; }
+
+    if ((fsrv->child_pid & FS_OPT_ERROR) &&
+        FS_OPT_GET_ERROR(fsrv->child_pid) == FS_ERROR_SHM_OPEN)
+      FATAL(
+          "Target reported shared memory access failed (perhaps increase "
+          "shared memory available).");
+
+    FATAL("Fork server is misbehaving (OOM?)");
+
+  }
+
+Callback *currentCallback = NULL;
   s32       inCallstack = 0;
   u8       local_buf[BUFFER_SIZE];
   memset(local_buf, BUFFER_SIZE, 0);
@@ -1921,41 +1957,8 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     }
 
     hashAndPrintCallbackList(fsrv);
-  }
-
-#ifdef AFL_PERSISTENT_RECORD
-  // end of persistent loop?
-  if (unlikely(fsrv->persistent_record &&
-               fsrv->persistent_record_pid != fsrv->child_pid)) {
-
-    fsrv->persistent_record_pid = fsrv->child_pid;
-    u32 idx, val;
-    if (unlikely(!fsrv->persistent_record_idx))
-      idx = fsrv->persistent_record - 1;
-    else
-      idx = fsrv->persistent_record_idx - 1;
-    val = fsrv->persistent_record_len[idx];
-    memset((void *)fsrv->persistent_record_len, 0,
-           fsrv->persistent_record * sizeof(u32));
-    fsrv->persistent_record_len[idx] = val;
-
-  }
-
-#endif
-
-  if (fsrv->child_pid <= 0) {
-
-    if (*stop_soon_p) { return 0; }
-
-    if ((fsrv->child_pid & FS_OPT_ERROR) &&
-        FS_OPT_GET_ERROR(fsrv->child_pid) == FS_ERROR_SHM_OPEN)
-      FATAL(
-          "Target reported shared memory access failed (perhaps increase "
-          "shared memory available).");
-
-    FATAL("Fork server is misbehaving (OOM?)");
-
-  }
+  } 
+  
 
   exec_ms = read_s32_timed(fsrv->fsrv_st_fd, &fsrv->child_status, timeout,
                            stop_soon_p);
@@ -2005,6 +2008,9 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     RPFATAL(res, "Unable to communicate with fork server");
 
   }
+
+
+
 
   if (!WIFSTOPPED(fsrv->child_status)) { fsrv->child_pid = -1; }
 
