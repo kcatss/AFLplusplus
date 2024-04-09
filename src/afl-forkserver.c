@@ -110,6 +110,7 @@ void freeCallbackList(CallbackList *list) {
 }
 
 void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
+  print ("in hashAndPrintCallbackList\n");
   const CallbackList *list = fsrv->cb_list;
   size_t              totalLength = 1;
 
@@ -150,8 +151,8 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
     freeCallback(&list->callbacks[i]);
   }
-  // printf("[CGF]Callback Print\n");
-  // printf("[CGF]\n%s\n",fsrv->stdout_buf);
+  printf("[CGF]Callback Print\n");
+  printf("[CGF]\n%s\n",fsrv->stdout_buf);
   // 마무리
   ck_free(list->callbacks);
   ck_free(fsrv->cb_list);
@@ -159,9 +160,89 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
 
   u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
   fsrv->cb_hash = cksum;
-  // printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
+  printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
 }
 
+
+void ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
+//
+  Callback *currentCallback = NULL;
+  s32       inCallstack = 0;
+  u8       local_buf[BUFFER_SIZE];
+  memset(local_buf, BUFFER_SIZE, 0);
+
+  fd_set         readfds;
+  struct timeval tv;
+  int            retval;
+  ssize_t        bytesRead;
+
+  FD_ZERO(&readfds);
+  FD_SET(out_pipe, &readfds);
+
+  tv.tv_usec = fsrv->exec_tmout;
+
+  u8    *accumulator = ck_alloc(BUFFER_SIZE);
+  size_t accumulated_size = BUFFER_SIZE;
+  u8    *lineStart;
+
+  // fsrv->stdout_buf = ck_realloc(fsrv->stdout_buf, BUFFER_SIZE);
+
+  fsrv->cb_list = (CallbackList *)ck_alloc(sizeof(CallbackList));
+  if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
+  fsrv->cb_list->callbacks = NULL;
+  fsrv->cb_list->callbackCount = 0;
+  // printf ("[CGF] before select\n");
+  retval = select(out_pipe + 1, &readfds, NULL, NULL, &tv);
+  // retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
+  // printf ("[CGF] after select\n");
+  if (retval == -1) {
+    PFATAL("select()");
+  } else if (retval) {
+    printf ("[CGF] before while\n");
+    while ((bytesRead = read(out_pipe, local_buf, BUFFER_SIZE - 1)) >
+           0) {
+      local_buf[bytesRead] = '\0';
+      printf("[CGF] in loop\n");
+      if (strstr(local_buf, "[CGF] finished!!") != NULL) {
+        break;  // "finish"
+      }
+
+      size_t new_size = accumulated_size + bytesRead;
+      accumulator = ck_realloc(accumulator, new_size);
+      if (unlikely(!accumulator)) { PFATAL("alloc"); }
+
+      strcat(accumulator, local_buf);  // Accumulate the read data
+      accumulated_size = new_size;
+
+      lineStart = accumulator;
+      char *lineEnd = NULL;
+      while ((lineEnd = strstr(lineStart, "\n")) != NULL) {
+        *lineEnd = '\0';  // Mark the end of the line
+        processLine(lineStart, fsrv->cb_list, &currentCallback, &inCallstack);
+        lineStart = lineEnd + 1;  // Move to the start of the next line
+      }
+      // Handle remaining data that doesn't end with a newline
+      size_t remaining = strlen(lineStart);
+      if (remaining > 0) {
+        memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
+        accumulated_size = remaining + BUFFER_SIZE; 
+      } else {
+        *accumulator = '\0';
+        accumulated_size = BUFFER_SIZE;  
+      }
+    }
+    printf("[CGF] out of loop\n");
+    // Process any remaining data that doesn't end with a newline
+    if (strlen(accumulator) > 0) {
+      processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
+    }
+
+    prntf("before hashAndPrintCallbackList\n");
+    hashAndPrintCallbackList(fsrv);
+    prntf("after hashAndPrintCallbackList\n");
+  } 
+//
+}
 
 /* function to load nyx_helper function from libnyx.so */
 
@@ -494,7 +575,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
   unsigned char tmp[4] = {0, 0, 0, 0};
   pid_t         child_pid;
-  int   out_pipe[2];
+  int   out_pipe[2]; // [CGF]
 
   if (!be_quiet) { ACTF("Using Fauxserver:"); }
 
@@ -518,7 +599,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     if (read(FORKSRV_FD, &was_killed, 4) != 4) { exit(0); }
 
-    if (pipe(out_pipe) ) { PFATAL("pipe() failed"); }
+    if (pipe(out_pipe) ) { PFATAL("pipe() failed"); } // [CGF]
 
     /* Create a clone of our process. */
 
@@ -530,12 +611,12 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     if (!child_pid) {  // New child
 
-      if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
+      if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); } // [CGF]
 
       close(fsrv->out_dir_fd);
       close(fsrv->dev_null_fd);
       close(fsrv->dev_urandom_fd);
-      close(out_pipe[0]);
+      close(out_pipe[0]); // [CGF]
       // fsrv->fsrv_out_fd = out_pipe[1];
 
       if (fsrv->plot_file != NULL) {
@@ -571,7 +652,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     }
 
-    close(out_pipe[1]);
+    close(out_pipe[1]); //  [CGF]
     // fsrv->fsrv_out_fd = out_pipe[0];
 
     /* In parent process: write PID to AFL. */
@@ -588,81 +669,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     }
 
-
-  Callback *currentCallback = NULL;
-  s32       inCallstack = 0;
-  u8       local_buf[BUFFER_SIZE];
-  memset(local_buf, BUFFER_SIZE, 0);
-
-  fd_set         readfds;
-  struct timeval tv;
-  int            retval;
-  ssize_t        bytesRead;
-
-  FD_ZERO(&readfds);
-  FD_SET(fsrv->fsrv_out_fd, &readfds);
-
-  tv.tv_usec = fsrv->exec_tmout;
-
-  u8    *accumulator = ck_alloc(BUFFER_SIZE);
-  size_t accumulated_size = BUFFER_SIZE;
-  u8    *lineStart;
-
-  // fsrv->stdout_buf = ck_realloc(fsrv->stdout_buf, BUFFER_SIZE);
-
-  fsrv->cb_list = (CallbackList *)ck_alloc(sizeof(CallbackList));
-  if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
-  fsrv->cb_list->callbacks = NULL;
-  fsrv->cb_list->callbackCount = 0;
-  // printf ("[CGF] before select\n");
-  retval = select(out_pipe[0] + 1, &readfds, NULL, NULL, &tv);
-  // retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
-  // printf ("[CGF] after select\n");
-  if (retval == -1) {
-    PFATAL("select()");
-  } else if (retval) {
-    printf ("[CGF] before while\n");
-    while ((bytesRead = read(out_pipe[0], local_buf, BUFFER_SIZE - 1)) >
-           0) {
-      local_buf[bytesRead] = '\0';
-      printf("[CGF] in loop\n");
-      if (strstr(local_buf, "[CGF] finished!!") != NULL) {
-        break;  // "finish"
-      }
-
-      size_t new_size = accumulated_size + bytesRead;
-      accumulator = ck_realloc(accumulator, new_size);
-      if (unlikely(!accumulator)) { PFATAL("alloc"); }
-
-      strcat(accumulator, local_buf);  // Accumulate the read data
-      accumulated_size = new_size;
-
-      lineStart = accumulator;
-      char *lineEnd = NULL;
-      while ((lineEnd = strstr(lineStart, "\n")) != NULL) {
-        *lineEnd = '\0';  // Mark the end of the line
-        processLine(lineStart, fsrv->cb_list, &currentCallback, &inCallstack);
-        lineStart = lineEnd + 1;  // Move to the start of the next line
-      }
-      // Handle remaining data that doesn't end with a newline
-      size_t remaining = strlen(lineStart);
-      if (remaining > 0) {
-        memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
-        accumulated_size = remaining + BUFFER_SIZE; 
-      } else {
-        *accumulator = '\0';
-        accumulated_size = BUFFER_SIZE;  
-      }
-    }
-    printf("[CGF] out of loop\n");
-    // Process any remaining data that doesn't end with a newline
-    if (strlen(accumulator) > 0) {
-      processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
-    }
-
-    hashAndPrintCallbackList(fsrv);
-  } 
-
+    ParseAndHashCallback(fsrv, out_pipe);
     // printf("[CGF] finished!!\n");
     /* Relay wait status to AFL pipe, then loop back. */
     

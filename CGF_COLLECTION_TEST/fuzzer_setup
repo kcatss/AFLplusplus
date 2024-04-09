@@ -1,0 +1,9 @@
+# environment variables:
+AFL_CUSTOM_MUTATOR_LIBRARY=/home/kk/projects/cgf/custom_mutator.so
+AFL_CUSTOM_MUTATOR_ONLY=1
+AFL_CUSTOM_INFO_PROGRAM=/home/kk/projects/cpython_tar/Python-3.12.1/python
+AFL_CUSTOM_INFO_PROGRAM_ARGV=@@
+AFL_CUSTOM_INFO_OUT=./CGF_COLLECTION_TEST
+AFL_DISABLE_TRIM=1
+# command line:
+'afl-fuzz' '-n' '-t' '100000ms' '-i' './seeds_0407' '-o' './CGF_COLLECTION_TEST' '--' '/home/kk/projects/cpython_tar/Python-3.12.1/python' '@@'
