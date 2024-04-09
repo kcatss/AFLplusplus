@@ -209,7 +209,7 @@ typedef struct afl_forkserver {
 
   CallbackList *cb_list;
   rbtree *cb_tree;
-  u32 cb_hash;
+  u64 cb_hash;
 
 #ifdef __linux__
   nyx_plugin_handler_t *nyx_handlers;
