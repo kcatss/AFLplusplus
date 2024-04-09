@@ -1408,8 +1408,8 @@ inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
     }
 
   }
-  printf("[CGF] testcase name %s\n",q->fname );
-  printf("[CGF] weight\t%f\tperf_score\t%f\n",q->weight, q->perf_score);
+  // printf("[CGF] testcase name %s\n",q->fname );
+  // printf("[CGF] weight\t%f\tperf_score\t%f\n",q->weight, q->perf_score);
 
   return q->testcase_buf;
 
