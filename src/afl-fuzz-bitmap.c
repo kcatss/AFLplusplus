@@ -206,32 +206,48 @@ void init_count_class16(void) {
    it needs to be fast. We do this in 32-bit and 64-bit flavors. */
 
 inline u8 has_new_bits(afl_state_t *afl) {
-  printf("[CGF] has_new_bits called");
+  // printf("[CGF] has_new_bits called");
   u8 ret = 0;
-  if (afl->fsrv.cb_hash == NULL)
+  
+  // printf("cb has %p %p \n",afl, &afl->fsrv);
+  // printf("cb has %llu \n",afl->fsrv->cb_hash);
+  // fsrv->cb_hash
+  // if (&(afl->fsrv.cb_hash) == NULL)
+  // if ((&afl->fsrv.cb_hash) == NULL)
+  // printf("[-] %llx\n ", &(afl->fsrv.cb_hash));
+  // printf("[-] %llx\n ", afl->fsrv.cb_hash);
+  // printf("[-] %llx\n ", &afl->fsrv.cb_hash);
+  // printf("[-] pid %ld\t%ld\n", (long)getpid(), (long)getppid());
+
+
+  if (&afl->fsrv.cb_hash == NULL)
     return ret;
 
 	mydata query;
 	query.cksum = afl->fsrv.cb_hash;
 
+  
+
 	rbnode *node;
 	mydata *data;
 
   // printf("[CGF]Hashed value: %llu in has_new_bits\n", query.cksum);
-
   if ( rb_find(afl->fsrv.cb_tree, &query) != NULL){
     // already exist cb_hash
-    // printf("[CGF]Hashed value: %llu already exist\n", query.cksum);
+    // printf("[CGF]Hashed value: %llx already exist\n", query.cksum);
     ret = 0;
   }
   else{
+
+
       if ((data = makedata(afl->fsrv.cb_hash)) == NULL || (node = rb_insert(afl->fsrv.cb_tree, data)) == NULL) {
+          
           ck_free(data);
           PFATAL("Can't Insert to Cbtree");
           return ret;
       }
       
-      // printf("[CGF]Hashed value: %llu interesting in has new bits\n", query.cksum);
+      // printf("[CGF]Hashed value: %llx interesting in has new bits\n", query.cksum);
       ret = 2;
   }
   
@@ -506,7 +522,7 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. */
-
+    // printf("[CGF] direct before has_new_bits in %p, %p\n", afl, afl->fsrv);
     if (likely(classified)) {
 
       new_bits = has_new_bits(afl);

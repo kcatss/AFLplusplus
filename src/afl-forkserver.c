@@ -109,8 +109,8 @@ void freeCallbackList(CallbackList *list) {
   ck_free(list->callbacks);
 }
 
-void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
-  print ("in hashAndPrintCallbackList\n");
+u64 hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
+  // printf ("[CGF] in hashAndPrintCallbackList\n");
   const CallbackList *list = fsrv->cb_list;
   size_t              totalLength = 1;
 
@@ -151,20 +151,28 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
     freeCallback(&list->callbacks[i]);
   }
-  printf("[CGF]Callback Print\n");
-  printf("[CGF]\n%s\n",fsrv->stdout_buf);
+  // printf("[CGF]Callback Print\n");
+  // printf("[CGF]\n%s\n",fsrv->stdout_buf);
   // 마무리
   ck_free(list->callbacks);
   ck_free(fsrv->cb_list);
   // 해시 값 계산 및 출력
 
   u64 cksum = hash64(fsrv->stdout_buf, totalLength, HASH_CONST);
+  // printf("[CGF] fsrv->cb_hash %llx\n",fsrv->cb_hash );
   fsrv->cb_hash = cksum;
-  printf("[CGF]Hashed value: %llu interesting  in hashAndPrintCallbackList\n", cksum);
+  // printf("[-] %llx\n ", &(fsrv->cb_hash));
+  // printf("[-] %llx\n ", fsrv->cb_hash);
+  // printf("[-] %llx\n ", &fsrv->cb_hash);
+  // printf("[-] pid %ld\t%ld\n", (long)getpid(), (long)getppid());
+  // printf("[CGF] fsrv %p\n",fsrv);
+  // (fsrv->afl_ptr)
+  // printf("[CGF]Hashed value: %llx interesting  in hashAndPrintCallbackList\n", cksum);
+  return cksum;
 }
 
 
-void ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
+u64 ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
 //
   Callback *currentCallback = NULL;
   s32       inCallstack = 0;
@@ -198,11 +206,11 @@ void ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
   if (retval == -1) {
     PFATAL("select()");
   } else if (retval) {
-    printf ("[CGF] before while\n");
+    // printf ("[CGF] before while\n");
     while ((bytesRead = read(out_pipe, local_buf, BUFFER_SIZE - 1)) >
            0) {
       local_buf[bytesRead] = '\0';
-      printf("[CGF] in loop\n");
+      // printf("[CGF] in loop\n");
       if (strstr(local_buf, "[CGF] finished!!") != NULL) {
         break;  // "finish"
       }
@@ -231,17 +239,19 @@ void ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
         accumulated_size = BUFFER_SIZE;  
       }
     }
-    printf("[CGF] out of loop\n");
+    // printf("[CGF] out of loop\n");
     // Process any remaining data that doesn't end with a newline
     if (strlen(accumulator) > 0) {
       processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
     }
 
-    prntf("before hashAndPrintCallbackList\n");
-    hashAndPrintCallbackList(fsrv);
-    prntf("after hashAndPrintCallbackList\n");
+    printf("before hashAndPrintCallbackList\n");
+    u64 cksum = hashAndPrintCallbackList(fsrv);
+    printf("after hashAndPrintCallbackList\n");
+    return cksum;
   } 
 //
+
 }
 
 /* function to load nyx_helper function from libnyx.so */
@@ -568,6 +578,80 @@ restart_select:
 
 }
 
+static u32 __attribute__((hot))
+read_u64_timed(s32 fd, u64 *buf, u32 timeout_ms, volatile u8 *stop_soon_p) {
+
+  fd_set readfds;
+  FD_ZERO(&readfds);
+  FD_SET(fd, &readfds);
+  struct timeval timeout;
+  int            sret;
+  ssize_t        len_read;
+
+  timeout.tv_sec = (timeout_ms / 1000);
+  timeout.tv_usec = (timeout_ms % 1000) * 1000;
+#if !defined(__linux__)
+  u32 read_start = get_cur_time_us();
+#endif
+
+  /* set exceptfds as well to return when a child exited/closed the pipe. */
+restart_select:
+  sret = select(fd + 1, &readfds, NULL, NULL, &timeout);
+
+  if (likely(sret > 0)) {
+
+  restart_read:
+    if (*stop_soon_p) {
+
+      // Early return - the user wants to quit.
+      return 0;
+
+    }
+
+    len_read = read(fd, (u8 *)buf, 4);
+
+    if (likely(len_read == 4)) {  // for speed we put this first
+
+#if defined(__linux__)
+      u32 exec_ms = MIN(
+          timeout_ms,
+          ((u64)timeout_ms - (timeout.tv_sec * 1000 + timeout.tv_usec / 1000)));
+#else
+      u32 exec_ms = MIN(timeout_ms, (get_cur_time_us() - read_start) / 1000);
+#endif
+
+      // ensure to report 1 ms has passed (0 is an error)
+      return exec_ms > 0 ? exec_ms : 1;
+
+    } else if (unlikely(len_read == -1 && errno == EINTR)) {
+
+      goto restart_read;
+
+    } else if (unlikely(len_read < 4)) {
+
+      return 0;
+
+    }
+
+  } else if (unlikely(!sret)) {
+
+    *buf = -1;
+    return timeout_ms + 1;
+
+  } else if (unlikely(sret < 0)) {
+
+    if (likely(errno == EINTR)) goto restart_select;
+
+    *buf = -1;
+    return 0;
+
+  }
+
+  return 0;  // not reached
+
+}
+
+
 /* Internal forkserver for non_instrumented_mode=1 and non-forkserver mode runs.
   It execvs for each fork, forwarding exit codes and child pids to afl. */
 
@@ -576,7 +660,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
   unsigned char tmp[4] = {0, 0, 0, 0};
   pid_t         child_pid;
   int   out_pipe[2]; // [CGF]
-
+  // printf("\n[CGF] afl_fauxsrv_execv %p\t%ld\t%ld\n", fsrv, (long)getpid(), (long)getppid());
   if (!be_quiet) { ACTF("Using Fauxserver:"); }
 
   /* Phone home and tell the parent that we're OK. If parent isn't there,
@@ -598,6 +682,9 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
     /* Wait for parent by reading from the pipe. Exit if read fails. */
 
     if (read(FORKSRV_FD, &was_killed, 4) != 4) { exit(0); }
+
+    // printf("\n[CGF] afl_fauxsrv_execv %p\t%ld\t%ld\n", fsrv, (long)getpid(), (long)getppid());
+    
 
     if (pipe(out_pipe) ) { PFATAL("pipe() failed"); } // [CGF]
 
@@ -669,7 +756,94 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     }
 
-    ParseAndHashCallback(fsrv, out_pipe);
+
+    // printf("before ParseAndHashCallback\n");
+    // ParseAndHashCallback(fsrv, out_pipe);
+Callback *currentCallback = NULL;
+  s32       inCallstack = 0;
+  u8       local_buf[BUFFER_SIZE];
+  memset(local_buf, BUFFER_SIZE, 0);
+
+  fd_set         readfds;
+  struct timeval tv;
+  int            retval;
+  ssize_t        bytesRead;
+
+  FD_ZERO(&readfds);
+  FD_SET(out_pipe[0], &readfds);
+
+  tv.tv_usec = fsrv->exec_tmout;
+
+  u8    *accumulator = ck_alloc(BUFFER_SIZE);
+  size_t accumulated_size = BUFFER_SIZE;
+  u8    *lineStart;
+
+  // fsrv->stdout_buf = ck_realloc(fsrv->stdout_buf, BUFFER_SIZE);
+
+  fsrv->cb_list = (CallbackList *)ck_alloc(sizeof(CallbackList));
+  if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
+  fsrv->cb_list->callbacks = NULL;
+  fsrv->cb_list->callbackCount = 0;
+  // printf ("[CGF] before select\n");
+  retval = select(out_pipe[0] + 1, &readfds, NULL, NULL, &tv);
+  // retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
+  // printf ("[CGF] after select\n");
+  if (retval == -1) {
+    PFATAL("select()");
+  } else if (retval) {
+    // printf ("[CGF] before while\n");
+    while ((bytesRead = read(out_pipe[0], local_buf, BUFFER_SIZE - 1)) >
+           0) {
+      local_buf[bytesRead] = '\0';
+      // printf("[CGF] in loop\n");
+      if (strstr(local_buf, "[CGF] finished!!") != NULL) {
+        break;  // "finish"
+      }
+
+      size_t new_size = accumulated_size + bytesRead;
+      accumulator = ck_realloc(accumulator, new_size);
+      if (unlikely(!accumulator)) { PFATAL("alloc"); }
+
+      strcat(accumulator, local_buf);  // Accumulate the read data
+      accumulated_size = new_size;
+
+      lineStart = accumulator;
+      char *lineEnd = NULL;
+      while ((lineEnd = strstr(lineStart, "\n")) != NULL) {
+        *lineEnd = '\0';  // Mark the end of the line
+        processLine(lineStart, fsrv->cb_list, &currentCallback, &inCallstack);
+        lineStart = lineEnd + 1;  // Move to the start of the next line
+      }
+      // Handle remaining data that doesn't end with a newline
+      size_t remaining = strlen(lineStart);
+      if (remaining > 0) {
+        memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
+        accumulated_size = remaining + BUFFER_SIZE; 
+      } else {
+        *accumulator = '\0';
+        accumulated_size = BUFFER_SIZE;  
+      }
+    }
+    // printf("[CGF] out of loop\n");
+    // Process any remaining data that doesn't end with a newline
+    if (strlen(accumulator) > 0) {
+      processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
+    }
+
+    // printf("before hashAndPrintCallbackList\n");
+    // printf("[CGF] before hashAndPrintCallbackList %p\n", fsrv);
+    u64 ck_sum = hashAndPrintCallbackList(fsrv);
+    // printf("[CGF] ck_sum %llx\t%ld\t%ld\n",ck_sum, (long)getpid(), (long)getppid());
+    
+
+    //[CGF]
+    if (write(FORKSRV_FD + 2, &ck_sum, 4) != 4) { exit(1); }
+    // printf("[CGF] [-] Finish Write \t%ld\t%ld\n",(long)getpid(), (long)getppid());
+
+  } 
+
+    // printf("after ParseAndHashCallback\n");
+    // PFATAL("END");
     // printf("[CGF] finished!!\n");
     /* Relay wait status to AFL pipe, then loop back. */
     
@@ -738,7 +912,7 @@ static void report_error_and_exit(int error) {
 void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
                     volatile u8 *stop_soon_p, u8 debug_child_output) {
 
-  int   st_pipe[2], ctl_pipe[2];//, out_pipe[2];
+  int   st_pipe[2], ctl_pipe[2], out_pipe[2];
   s32   status;
   s32   rlen;
   char *ignore_autodict = getenv("AFL_NO_AUTODICT");
@@ -1053,7 +1227,7 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   }
 
-  if (pipe(st_pipe) || pipe(ctl_pipe)  ) { PFATAL("pipe() failed"); }
+  if (pipe(st_pipe) || pipe(ctl_pipe) || pipe(out_pipe) ) { PFATAL("pipe() failed"); }
 
   fsrv->last_run_timed_out = 0;
   fsrv->fsrv_pid = fork();
@@ -1140,14 +1314,14 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
     if (dup2(ctl_pipe[0], FORKSRV_FD) < 0) { PFATAL("dup2() failed"); }
     if (dup2(st_pipe[1], FORKSRV_FD + 1) < 0) { PFATAL("dup2() failed"); }
-    // if (dup2(out_pipe[1], 1) < 0) { PFATAL("dup2() failed"); }
+    if (dup2(out_pipe[1], FORKSRV_FD + 2) < 0) { PFATAL("dup2() failed"); }
 
     close(ctl_pipe[0]);
     close(ctl_pipe[1]);
     close(st_pipe[0]);
     close(st_pipe[1]);
-    // close(out_pipe[0]);
-    // close(out_pipe[1]);
+    close(out_pipe[0]);
+    close(out_pipe[1]);
 
     close(fsrv->out_dir_fd);
     close(fsrv->dev_null_fd);
@@ -1191,11 +1365,11 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
   close(ctl_pipe[0]);
   close(st_pipe[1]);
-  // close(out_pipe[1]);
+  close(out_pipe[1]);
 
   fsrv->fsrv_ctl_fd = ctl_pipe[1];
   fsrv->fsrv_st_fd = st_pipe[0];
-  // fsrv->fsrv_out_fd = out_pipe[0];
+  fsrv->fsrv_out_fd = out_pipe[0];
 
   /* Wait for the fork server to come up, but don't wait too long. */
 
@@ -1926,7 +2100,8 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
   /* we have the fork server (or faux server) up and running
   First, tell it if the previous run timed out. */
-
+  // printf("\n[CGF] afl_fauxsrv_execv %p in afl_fsrv_run_target %ld\t%ld\n", fsrv, (long)getpid(), (long)getppid());
+  //printf("[+] before read_u64_timed %ld\t%ld\n", (long)getpid(), (long)getppid());
   if ((res = write(fsrv->fsrv_ctl_fd, &write_value, 4)) != 4) {
 
     if (*stop_soon_p) { return 0; }
@@ -1978,8 +2153,15 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
   }
 
-  
-  
+  //%ld\t%ld\n", (long)getpid(), (long)getppid()
+  // printf("[CGF] [+] before read_u64_timed %ld\t%ld\n", (long)getpid(), (long)getppid());
+  u64 cb_cksum;
+  u32 cksum_exec_ms = read_u64_timed(fsrv->fsrv_out_fd, &cb_cksum, timeout,
+                           stop_soon_p);
+  // printf("[CGF] after read cksum!!! %llu\t%ld\t%ld\n", cb_cksum,(long)getpid(), (long)getppid());
+  fsrv->cb_hash = cb_cksum;
+  // PFATAL("HERE");
+
 
   exec_ms = read_s32_timed(fsrv->fsrv_st_fd, &fsrv->child_status, timeout,
                            stop_soon_p);

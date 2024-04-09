@@ -78,6 +78,7 @@ double compute_weight(afl_state_t *afl, struct queue_entry *q,
   weight *= (1 + (q->tc_ref / avg_top_size));
 
   if (unlikely(weight < 0.1)) { weight = 0.1; }
+  weight = 0.1;
   if (unlikely(q->favored)) { weight *= 5; }
   if (unlikely(!q->was_fuzzed)) { weight *= 2; }
   if (unlikely(q->fs_redundant)) { weight *= 0.8; }
@@ -914,6 +915,7 @@ u32 calculate_score(afl_state_t *afl, struct queue_entry *q) {
   u32 avg_exec_us = afl->total_cal_us / cal_cycles;
   u32 avg_bitmap_size = afl->total_bitmap_size / bitmap_entries;
   u32 perf_score = 100;
+  return perf_score;
 
   /* Adjust score based on execution speed of this path, compared to the
      global average. Multiplier ranges from 0.1x to 3x. Fast inputs are
@@ -1258,7 +1260,7 @@ inline void queue_testcase_retake_mem(afl_state_t *afl, struct queue_entry *q,
   Increases the refcount. */
 
 inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
-
+  // printf("\n[CGF] queue_testcase_get\n");
   u32 len = q->len;
 
   /* first handle if no testcase cache is configured */
@@ -1282,7 +1284,7 @@ inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
       PFATAL("Unable to malloc '%s' with len %u", (char *)q->fname, len);
 
     }
-
+    // printf("[CGF] q_testcase_max_cache_size %s\n",q->fname );
     int fd = open((char *)q->fname, O_RDONLY);
 
     if (unlikely(fd < 0)) { PFATAL("Unable to open '%s'", (char *)q->fname); }
@@ -1375,7 +1377,7 @@ inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
       ++tid;
 
     /* Map the test case into memory. */
-
+    
     int fd = open((char *)q->fname, O_RDONLY);
 
     if (unlikely(fd < 0)) { PFATAL("Unable to open '%s'", (char *)q->fname); }
@@ -1406,6 +1408,8 @@ inline u8 *queue_testcase_get(afl_state_t *afl, struct queue_entry *q) {
     }
 
   }
+  printf("[CGF] testcase name %s\n",q->fname );
+  printf("[CGF] weight\t%f\tperf_score\t%f\n",q->weight, q->perf_score);
 
   return q->testcase_buf;
 

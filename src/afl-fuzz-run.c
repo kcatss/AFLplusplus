@@ -59,7 +59,7 @@ fuzz_run_target(afl_state_t *afl, afl_forkserver_t *fsrv, u32 timeout) {
 #endif
 
   fsrv_run_result_t res = afl_fsrv_run_target(fsrv, timeout, &afl->stop_soon);
-
+  // printf("[CGF] fsrv %p in fuzz_run_target\n", fsrv);
   /* If post_run() function is defined in custom mutator, the function will be
      called each time after AFL++ executes the target program. */
 
@@ -1091,7 +1091,7 @@ common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
   }
 
   /* This handles FAULT_ERROR for us: */
-
+  // printf("[CGF] before save_if_interesting! %p, %p\n",afl, &afl->fsrv);
   afl->queued_discovered += save_if_interesting(afl, out_buf, len, fault);
 
   if (!(afl->stage_cur % afl->stats_update_freq) ||

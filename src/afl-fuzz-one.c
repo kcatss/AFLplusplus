@@ -1897,7 +1897,7 @@ custom_mutator_stage:
             } while (unlikely(tid == afl->current_entry ||
 
                               afl->queue_buf[tid]->len < 4));
-
+            // printf("[CGF] tid %d\n", tid);
             target = afl->queue_buf[tid];
             afl->splicing_with = tid;
 
