@@ -206,7 +206,7 @@ void init_count_class16(void) {
    it needs to be fast. We do this in 32-bit and 64-bit flavors. */
 
 inline u8 has_new_bits(afl_state_t *afl) {
-  printf("[CGF] has_new_bits called")
+  printf("[CGF] has_new_bits called");
   u8 ret = 0;
   if (afl->fsrv.cb_hash == NULL)
     return ret;
