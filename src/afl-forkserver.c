@@ -704,6 +704,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
       close(fsrv->dev_null_fd);
       close(fsrv->dev_urandom_fd);
       close(out_pipe[0]); // [CGF]
+      close(out_pipe[1]); // [CGF]
       // fsrv->fsrv_out_fd = out_pipe[1];
 
       if (fsrv->plot_file != NULL) {
@@ -824,6 +825,7 @@ Callback *currentCallback = NULL;
         accumulated_size = BUFFER_SIZE;  
       }
     }
+    close(out_pipe[0]);
     // printf("[CGF] out of loop\n");
     // Process any remaining data that doesn't end with a newline
     if (strlen(accumulator) > 0) {
@@ -835,7 +837,7 @@ Callback *currentCallback = NULL;
     u64 ck_sum = hashAndPrintCallbackList(fsrv);
     // printf("[CGF] ck_sum %llx\t%ld\t%ld\n",ck_sum, (long)getpid(), (long)getppid());
     
-
+    
     //[CGF]
     if (write(FORKSRV_FD + 2, &ck_sum, 4) != 4) { exit(1); }
     // printf("[CGF] [-] Finish Write \t%ld\t%ld\n",(long)getpid(), (long)getppid());
