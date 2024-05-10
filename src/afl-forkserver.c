@@ -151,22 +151,20 @@ u32 hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
     }
     freeCallback(&list->callbacks[i]);
   }
-  printf("[CGF]Callback Print\n");
-  printf("[CGF]\n%s\n",fsrv->stdout_buf);
   // 마무리
   ck_free(list->callbacks);
   ck_free(fsrv->cb_list);
   // 해시 값 계산 및 출력
 
   u32 cksum = hash32(fsrv->stdout_buf, totalLength, HASH_CONST);
-  printf("[CGF] before fsrv->cb_hash %llx\n",fsrv->cb_hash );
+  // printf("[CGF] before fsrv->cb_hash %llx\n",fsrv->cb_hash );
   fsrv->cb_hash = cksum;
-  printf("[CGF] cksum %x\n",cksum );
-  printf("[CGF] after fsrv->cb_hash %llx\n",fsrv->cb_hash );
+  // printf("[CGF] cksum %x\n",cksum );
+  // printf("[CGF] after fsrv->cb_hash %llx\n",fsrv->cb_hash );
   // printf("[-] %llx\n ", &(fsrv->cb_hash));
   // printf("[-] %llx\n ", fsrv->cb_hash);
   // printf("[-] %llx\n ", &fsrv->cb_hash);
-  printf("[-] pid %ld\t%ld\n", (long)getpid(), (long)getppid());
+  // printf("[-] pid %ld\t%ld\n", (long)getpid(), (long)getppid());
   // printf("[CGF] fsrv %p\n",fsrv);
   // (fsrv->afl_ptr)
   // printf("[CGF]Hashed value: %llx interesting  in hashAndPrintCallbackList\n", cksum);
@@ -247,9 +245,9 @@ u64 ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
       processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
     }
 
-    printf("before hashAndPrintCallbackList\n");
+    // printf("before hashAndPrintCallbackList\n");
     u64 cksum = hashAndPrintCallbackList(fsrv); //parse
-    printf("after hashAndPrintCallbackList\n");
+    // printf("after hashAndPrintCallbackList\n");
     return cksum;
   } 
 //
@@ -767,7 +765,6 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
     /* Create a clone of our process. */
 
     child_pid = fork();
-    printf("==[*]== fork occur!! %d %d %d \n",child_pid, getpid(), getppid());
     if (child_pid < 0) { PFATAL("Fork failed"); }
 
     /* In child process: close fds, resume execution. */
@@ -913,36 +910,28 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
     // printf("before hashAndPrintCallbackList\n");
     // printf("[CGF] before hashAndPrintCallbackList %p\n", fsrv);
     u32 ck_sum = hashAndPrintCallbackList(fsrv);
-    printf("[1] =======================\n");
-    printf("[CGF] before write ck_sum %x \t %d \t %d\n\n",ck_sum, getpid(), getppid());
+    // printf("[CGF] before write ck_sum %x \t %d \t %d\n\n",ck_sum, getpid(), getppid());
     
     
     //[CGF] write check sum
-    printf("[1.1] \n");
 
     if (write(FORKSRV_FD + 2, &ck_sum, 4) != 4) { exit(1); } // 
     
 
 
     s32 stdout_len = strlen(fsrv->stdout_buf);
-    printf("\n\n[CGF] [+] stdout_len %d\n",stdout_len);
-    printf("[1.2] \n");
+    // printf("\n\n[CGF] [+] stdout_len %d\n",stdout_len);
 
     if (write(FORKSRV_FD + 2, &stdout_len, 4) != 4) { exit(1); } // 
 
-    printf("[1.3] \n");
     if (stdout_len > 0){
-        printf("[1.4] \n");
         
         if (write(FORKSRV_FD + 2, fsrv->stdout_buf, stdout_len) != stdout_len) { exit(1); } // 
 
-        printf("[1.5] \n");
     }
-    printf("[1.6] \n");
-
-    printf("[CGF] [+] Finish Write \t%d\t%d\n",getpid(), getppid());
+    // printf("[CGF] [+] Finish Write \t%d\t%d\n",getpid(), getppid());
     
-    printf("[CGF] [+] stdout   \t%s %d\n",fsrv->stdout_buf, stdout_len);
+    // printf("[CGF] [+] stdout   \t%s %d\n",fsrv->stdout_buf, stdout_len);
 
    } 
 
@@ -950,7 +939,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
     // PFATAL("END");
     // printf("[CGF] finished!!\n");
     /* Relay wait status to AFL pipe, then loop back. */
-    printf("[CGF] before write status %d\t%d\n",getpid(), getppid());
+    // printf("[CGF] before write status %d\t%d\n",getpid(), getppid());
     if (write(FORKSRV_FD + 1, &status, 4) != 4) { exit(1); }
     
   } // end of while
@@ -2212,7 +2201,7 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     RPFATAL(res, "Unable to request new process from fork server (OOM?)");
 
   }
-  printf("[CGF] read write_value %x\n",write_value);
+  // printf("[CGF] read write_value %x\n",write_value);
   fsrv->last_run_timed_out = 0;
 
   if ((res = read(fsrv->fsrv_st_fd, &fsrv->child_pid, 4)) != 4) {
@@ -2221,7 +2210,7 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
     RPFATAL(res, "Unable to request new process from fork server (OOM?)");
 
   }
-  printf("[CGF] read child_pid %d\n",fsrv->child_pid );
+  // printf("[CGF] read child_pid %d\n",fsrv->child_pid );
 
 
 #ifdef AFL_PERSISTENT_RECORD
@@ -2321,8 +2310,8 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
 
 
-  printf("[CGF] after read cksum!!! %x \t %ld \t %ld\n", cb_cksum,(long)getpid(), (long)getppid());
-  printf("[2]=======================\n");
+  // printf("[CGF] after read cksum!!! %x \t %ld \t %ld\n", cb_cksum,(long)getpid(), (long)getppid());
+  // printf("[2]=======================\n");
   fsrv->cb_hash = cb_cksum;
   // PFATAL("HERE");
 
@@ -2333,17 +2322,17 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
                            stop_soon_p); //
 
 
-  printf("[CGF] after read stdout_buf_len !!! %d \t\n", stdout_buf_len);
+  // printf("[CGF] after read stdout_buf_len !!! %d \t\n", stdout_buf_len);
   
   if (stdout_buf_len > 0){
-    printf("[CGF] stdout_buf_len !!! %d\n", stdout_buf_len);
+    // printf("[CGF] stdout_buf_len !!! %d\n", stdout_buf_len);
 
     fsrv->stdout_buf = (u8 *)ck_realloc(fsrv->stdout_buf, stdout_buf_len + 1);
-
+    
     u32 buf_exec_ms = read_buf_timed(fsrv->fsrv_out_fd, fsrv->stdout_buf, stdout_buf_len, timeout, stop_soon_p);
     fsrv->stdout_buf[stdout_buf_len] = 0;
-    printf("\nREAD [%08x] %08x %s\n", &(fsrv->stdout_buf), fsrv->stdout_buf, fsrv->stdout_buf);
-    printf("[CGF] stdout_buf !!! %s\n\n\n", fsrv->stdout_buf);
+    // printf("\nREAD [%08x] %08x %s\n", &(fsrv->stdout_buf), fsrv->stdout_buf, fsrv->stdout_buf);
+    // printf("[CGF] stdout_buf !!! %s\n\n\n", fsrv->stdout_buf);
 
   }
 

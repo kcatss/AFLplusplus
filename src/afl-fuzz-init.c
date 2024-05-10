@@ -912,7 +912,9 @@ void perform_dry_run(afl_state_t *afl) {
 
     close(fd);
 
+    afl->calibrate_cur = afl->queue_buf[idx];
     res = calibrate_case(afl, q, use_mem, 0, 1);
+    afl->calibrate_cur = 0;
 
     if (afl->stop_soon) { return; }
 
