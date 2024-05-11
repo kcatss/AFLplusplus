@@ -109,7 +109,7 @@ void freeCallbackList(CallbackList *list) {
   ck_free(list->callbacks);
 }
 
-u32 hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
+void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
   // printf ("[CGF] in hashAndPrintCallbackList\n");
   const CallbackList *list = fsrv->cb_list;
   size_t              totalLength = 1;
@@ -156,9 +156,9 @@ u32 hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
   ck_free(fsrv->cb_list);
   // 해시 값 계산 및 출력
 
-  u32 cksum = hash32(fsrv->stdout_buf, totalLength, HASH_CONST);
+  // u32 cksum = hash32(fsrv->stdout_buf, totalLength, HASH_CONST);
   // printf("[CGF] before fsrv->cb_hash %llx\n",fsrv->cb_hash );
-  fsrv->cb_hash = cksum;
+  // fsrv->cb_hash = cksum;
   // printf("[CGF] cksum %x\n",cksum );
   // printf("[CGF] after fsrv->cb_hash %llx\n",fsrv->cb_hash );
   // printf("[-] %llx\n ", &(fsrv->cb_hash));
@@ -168,91 +168,9 @@ u32 hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
   // printf("[CGF] fsrv %p\n",fsrv);
   // (fsrv->afl_ptr)
   // printf("[CGF]Hashed value: %llx interesting  in hashAndPrintCallbackList\n", cksum);
-  return cksum;
 }
 
 
-u64 ParseAndHashCallback(afl_forkserver_t *fsrv, int out_pipe ){
-//
-  Callback *currentCallback = NULL;
-  s32       inCallstack = 0;
-  u8       local_buf[BUFFER_SIZE];
-  memset(local_buf, BUFFER_SIZE, 0);
-
-  fd_set         readfds;
-  struct timeval tv;
-  int            retval;
-  ssize_t        bytesRead;
-
-  FD_ZERO(&readfds);
-  FD_SET(out_pipe, &readfds);
-
-  tv.tv_usec = fsrv->exec_tmout;
-
-  u8    *accumulator = ck_alloc(BUFFER_SIZE);
-  size_t accumulated_size = BUFFER_SIZE;
-  u8    *lineStart;
-
-  // fsrv->stdout_buf = ck_realloc(fsrv->stdout_buf, BUFFER_SIZE);
-
-  fsrv->cb_list = (CallbackList *)ck_alloc(sizeof(CallbackList));
-  if (unlikely(!fsrv->cb_list)) { PFATAL("fsrv->cb_list alloc"); }
-  fsrv->cb_list->callbacks = NULL;
-  fsrv->cb_list->callbackCount = 0;
-  // printf ("[CGF] before select\n");
-  retval = select(out_pipe + 1, &readfds, NULL, NULL, &tv);
-  // retval = select(fsrv->fsrv_out_fd + 1, &readfds, NULL, NULL, &tv);
-  // printf ("[CGF] after select\n");
-  if (retval == -1) {
-    PFATAL("select()");
-  } else if (retval) {
-    // printf ("[CGF] before while\n");
-    while ((bytesRead = read(out_pipe, local_buf, BUFFER_SIZE - 1)) >
-           0) {
-      local_buf[bytesRead] = '\0';
-      // printf("[CGF] in loop\n");
-      if (strstr(local_buf, "[CGF] finished!!") != NULL) {
-        break;  // "finish"
-      }
-
-      size_t new_size = accumulated_size + bytesRead;
-      accumulator = ck_realloc(accumulator, new_size);
-      if (unlikely(!accumulator)) { PFATAL("alloc"); }
-
-      strcat(accumulator, local_buf);  // Accumulate the read data
-      accumulated_size = new_size;
-
-      lineStart = accumulator;
-      char *lineEnd = NULL;
-      while ((lineEnd = strstr(lineStart, "\n")) != NULL) {
-        *lineEnd = '\0';  // Mark the end of the line
-        processLine(lineStart, fsrv->cb_list, &currentCallback, &inCallstack);
-        lineStart = lineEnd + 1;  // Move to the start of the next line
-      }
-      // Handle remaining data that doesn't end with a newline
-      size_t remaining = strlen(lineStart);
-      if (remaining > 0) {
-        memmove(accumulator, lineStart, remaining + BUFFER_SIZE);
-        accumulated_size = remaining + BUFFER_SIZE; 
-      } else {
-        *accumulator = '\0';
-        accumulated_size = BUFFER_SIZE;  
-      }
-    }
-    // printf("[CGF] out of loop\n");
-    // Process any remaining data that doesn't end with a newline
-    if (strlen(accumulator) > 0) {
-      processLine(accumulator, fsrv->cb_list, &currentCallback, &inCallstack);
-    }
-
-    // printf("before hashAndPrintCallbackList\n");
-    u64 cksum = hashAndPrintCallbackList(fsrv); //parse
-    // printf("after hashAndPrintCallbackList\n");
-    return cksum;
-  } 
-//
-
-}
 
 /* function to load nyx_helper function from libnyx.so */
 
@@ -453,7 +371,7 @@ void afl_fsrv_init(afl_forkserver_t *fsrv) {
 
   fsrv->init_child_func = fsrv_exec_child;
   fsrv->cb_list = NULL;
-  fsrv->cb_hash = 0;
+  // fsrv->cb_hash = 0;
   fsrv->stdout_buf = NULL;
 
   list_append(&fsrv_list, fsrv);
@@ -493,9 +411,9 @@ void afl_fsrv_init_dup(afl_forkserver_t *fsrv_to, afl_forkserver_t *from) {
   fsrv_to->cb_list = from->cb_list;
 
   fsrv_to->fsrv_out_fd = from->fsrv_out_fd;
-  fsrv_to->cb_tree = from->cb_tree;
+  // fsrv_to->cb_tree = from->cb_tree;
   fsrv_to->stdout_buf = from->stdout_buf;
-  fsrv_to->cb_hash = from->cb_hash;
+  // fsrv_to->cb_hash = from->cb_hash;
 
   list_append(&fsrv_list, fsrv_to);
 
@@ -909,13 +827,13 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
 
     // printf("before hashAndPrintCallbackList\n");
     // printf("[CGF] before hashAndPrintCallbackList %p\n", fsrv);
-    u32 ck_sum = hashAndPrintCallbackList(fsrv);
+    hashAndPrintCallbackList(fsrv);
     // printf("[CGF] before write ck_sum %x \t %d \t %d\n\n",ck_sum, getpid(), getppid());
     
     
     //[CGF] write check sum
 
-    if (write(FORKSRV_FD + 2, &ck_sum, 4) != 4) { exit(1); } // 
+    
     
 
 
@@ -1281,9 +1199,9 @@ void afl_fsrv_start(afl_forkserver_t *fsrv, char **argv,
 
 #endif
 
-  if ((fsrv->cb_tree = rb_create(compare_func, destroy_func)) == NULL) {
-    PFATAL("cb_tree() create failed");
-  }
+  // if ((fsrv->cb_tree = rb_create(compare_func, destroy_func)) == NULL) {
+  //   PFATAL("cb_tree() create failed");
+  // }
 
   if (!be_quiet) { ACTF("Spinning up the fork server..."); }
 
@@ -2301,18 +2219,18 @@ afl_fsrv_run_target(afl_forkserver_t *fsrv, u32 timeout,
 
   //%ld\t%ld\n", (long)getpid(), (long)getppid()
   // printf("[CGF] [+] before read_u64_timed %ld\t%ld\n", (long)getpid(), (long)getppid());
-  u32 cb_cksum=0;
+  // u32 cb_cksum=0;
   // u32 cksum_exec_ms = read_u32_timed(fsrv->fsrv_out_fd, &cb_cksum, timeout,
   //                          stop_soon_p);
 
 
-  s32 len_read = read(fsrv->fsrv_out_fd, &cb_cksum, 4); //
+  // s32 len_read = read(fsrv->fsrv_out_fd, &cb_cksum, 4); //
 
 
 
   // printf("[CGF] after read cksum!!! %x \t %ld \t %ld\n", cb_cksum,(long)getpid(), (long)getppid());
   // printf("[2]=======================\n");
-  fsrv->cb_hash = cb_cksum;
+  // fsrv->cb_hash = cb_cksum;
   // PFATAL("HERE");
 
   s32 stdout_buf_len = 0;

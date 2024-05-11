@@ -483,7 +483,7 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
   if (q->exec_cksum) {
 
     memcpy(afl->first_trace, afl->fsrv.trace_bits, afl->fsrv.map_size);
-    hnb = has_new_bits(afl);
+    hnb = has_new_bits(afl, afl->virgin_bits);
     if (hnb > new_bits) { new_bits = hnb; }
 
   }
@@ -525,7 +525,7 @@ u8 calibrate_case(afl_state_t *afl, struct queue_entry *q, u8 *use_mem,
     cksum = hash64(afl->fsrv.trace_bits, afl->fsrv.map_size, HASH_CONST);
     if (q->exec_cksum != cksum) {
 
-      hnb = has_new_bits(afl);
+      hnb = has_new_bits(afl, afl->virgin_bits);
       if (hnb > new_bits) { new_bits = hnb; }
 
       if (q->exec_cksum) {

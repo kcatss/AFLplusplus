@@ -208,8 +208,8 @@ typedef struct afl_forkserver {
   u8 persistent_mode;
 
   CallbackList *cb_list;
-  rbtree *cb_tree;
-  u32 cb_hash;
+  // rbtree *cb_tree;
+  // u32 cb_hash;
 
 #ifdef __linux__
   nyx_plugin_handler_t *nyx_handlers;
