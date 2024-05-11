@@ -276,7 +276,7 @@ ifneq "$(findstring OpenBSD, $(SYS))" ""
   override LDFLAGS += -lpthread -lm
 endif
 
-COMM_HDR    = include/alloc-inl.h include/config.h include/debug.h include/types.h include/rb.h include/rb_data.h
+COMM_HDR    = include/alloc-inl.h include/config.h include/debug.h include/types.h
 
 ifeq "$(shell echo '$(HASH)include <Python.h>@int main() {return 0; }' | tr @ '\n' | $(CC) $(CFLAGS) -x c - -o .test $(PYTHON_INCLUDE) $(LDFLAGS) $(PYTHON_LIB) 2>/dev/null && echo 1 || echo 0 ; rm -f .test )" "1"
 	PYTHON_OK=1
@@ -448,15 +448,10 @@ endif
 ready:
 	@echo "[+] Everything seems to be working, ready to compile. ($(shell $(CC) --version 2>&1|head -n 1))"
 
-afl-as: src/afl-as.c src/rb_data.o src/rb.o include/afl-as.h $(COMM_HDR) | test_x86
-	$(CC) $(CFLAGS) src/$@.c src/rb_data.o src/rb.o -o $@ $(LDFLAGS)
+afl-as: src/afl-as.c include/afl-as.h $(COMM_HDR) | test_x86
+	$(CC) $(CFLAGS) src/$@.c -o $@ $(LDFLAGS)
 	@ln -sf afl-as as
 
-src/rb.o : $(COMM_HDR) src/rb.c include/rb.h
-	$(CC) $(CFLAGS) $(CFLAGS_OPT) -Iinclude -c src/rb.c -o src/rb.o
-
-src/rb_data.o : $(COMM_HDR) src/rb_data.c include/rb_data.h
-	$(CC) $(CFLAGS) $(CFLAGS_OPT) -Iinclude -c src/rb_data.c -o src/rb_data.o
 
 
 src/afl-performance.o : $(COMM_HDR) src/afl-performance.c include/hash.h
@@ -465,24 +460,24 @@ src/afl-performance.o : $(COMM_HDR) src/afl-performance.c include/hash.h
 src/afl-common.o : $(COMM_HDR) src/afl-common.c include/common.h
 	$(CC) $(CFLAGS) $(CFLAGS_FLTO) -c src/afl-common.c -o src/afl-common.o
 
-src/afl-forkserver.o : $(COMM_HDR) src/rb_data.o src/rb.o src/afl-forkserver.c include/forkserver.h
-	$(CC) $(CFLAGS) $(CFLAGS_FLTO) -c src/afl-forkserver.c src/rb_data.o src/rb.o -o src/afl-forkserver.o
+src/afl-forkserver.o : $(COMM_HDR) src/afl-forkserver.c include/forkserver.h
+	$(CC) $(CFLAGS) $(CFLAGS_FLTO) -c src/afl-forkserver.c -o src/afl-forkserver.o
 
 src/afl-sharedmem.o : $(COMM_HDR) src/afl-sharedmem.c include/sharedmem.h
 	$(CC) $(CFLAGS) $(CFLAGS_FLTO) -c src/afl-sharedmem.c -o src/afl-sharedmem.o
 
-afl-fuzz: $(COMM_HDR) include/afl-fuzz.h $(AFL_FUZZ_FILES) src/rb_data.o src/rb.o src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o | test_x86
-	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) $(AFL_FUZZ_FILES) src/rb_data.o src/rb.o src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(PYFLAGS) $(LDFLAGS) -lm
+afl-fuzz: $(COMM_HDR) include/afl-fuzz.h $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o | test_x86
+	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) $(AFL_FUZZ_FILES) src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(PYFLAGS) $(LDFLAGS) -lm
 
 
 afl-showmap: src/afl-showmap.c src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o $(COMM_HDR) | test_x86
-	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/rb_data.o src/rb.o src/afl-fuzz-mutators.c src/afl-fuzz-python.c src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(PYFLAGS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/afl-fuzz-mutators.c src/afl-fuzz-python.c src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(PYFLAGS) $(LDFLAGS)
 
 afl-tmin: src/afl-tmin.c src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o $(COMM_HDR) | test_x86
-	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/rb_data.o src/rb.o src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/afl-common.o src/afl-sharedmem.o src/afl-forkserver.o src/afl-performance.o -o $@ $(LDFLAGS)
 
 afl-analyze: src/afl-analyze.c src/afl-common.o src/afl-sharedmem.o src/afl-performance.o src/afl-forkserver.o $(COMM_HDR) | test_x86
-	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/rb_data.o src/rb.o src/afl-common.o src/afl-sharedmem.o src/afl-performance.o src/afl-forkserver.o -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/afl-common.o src/afl-sharedmem.o src/afl-performance.o src/afl-forkserver.o -o $@ $(LDFLAGS)
 
 afl-gotcpu: src/afl-gotcpu.c src/afl-common.o $(COMM_HDR) | test_x86
 	$(CC) $(CFLAGS) $(COMPILE_STATIC) $(CFLAGS_FLTO) src/$@.c src/afl-common.o -o $@ $(LDFLAGS)

@@ -32,7 +32,6 @@
 #include <stdbool.h>
 
 #include "types.h"
-#include "rb.h"
 
 #ifdef __linux__
 /**

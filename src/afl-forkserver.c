@@ -52,8 +52,6 @@
 #ifdef __linux__
   #include <dlfcn.h>
 
-#include "rb.h"
-#include "rb_data.h"
 #include <afl-fuzz.h>
 #define BUFFER_SIZE 1024
 
@@ -171,6 +169,28 @@ void hashAndPrintCallbackList(afl_forkserver_t *fsrv) {
 }
 
 
+void processLine(u8 *line, CallbackList *list, Callback **currentCallback,
+                 s32 *inCallstack) {
+  if (strstr(line, "Callback Called!")) {
+    u8 className[100], methodName[100];
+    sscanf(line, "Callback Called! %[^:]:%s", className, methodName);
+    // 새 콜백 생성
+    *currentCallback = createCallback(className, methodName);
+  } else if (strstr(line, "CallStack Start")) {
+    *inCallstack = 1;
+  } else if (strstr(line, "CallStack End")) {
+    *inCallstack = 0;
+    if (*currentCallback != NULL) {
+      addCallback(list, *currentCallback);
+      *currentCallback = NULL;
+      // currentCallback은 리스트에 추가된 후 바로 다음 콜백을 위해 초기화하지
+      // 않음
+    }
+  } else if (*inCallstack && *currentCallback &&
+             !strstr(line, "for i in traceback.extract_stack")) {
+    addCallStack((*currentCallback)->callStack, line);
+  }
+}
 
 /* function to load nyx_helper function from libnyx.so */
 
@@ -497,7 +517,7 @@ restart_select:
 }
 
 static u32 __attribute__((hot))
-read_buf_timed(s32 fd, u64 *buf, int buf_len, u32 timeout_ms, volatile u8 *stop_soon_p) {
+read_buf_timed(s32 fd, u8 *buf, int buf_len, u32 timeout_ms, volatile u8 *stop_soon_p) {
 
   fd_set readfds;
   FD_ZERO(&readfds);
@@ -756,7 +776,7 @@ static void afl_fauxsrv_execv(afl_forkserver_t *fsrv, char **argv) {
   Callback *currentCallback = NULL;
   s32       inCallstack = 0;
   u8       local_buf[BUFFER_SIZE];
-  memset(local_buf, BUFFER_SIZE, 0);
+  memset(local_buf,0,BUFFER_SIZE );
 
   fd_set         readfds;
   struct timeval tv;
@@ -2001,28 +2021,6 @@ afl_fsrv_write_to_testcase(afl_forkserver_t *fsrv, u8 *buf, size_t len) {
 
 }
 
-void processLine(u8 *line, CallbackList *list, Callback **currentCallback,
-                 s32 *inCallstack) {
-  if (strstr(line, "Callback Called!")) {
-    u8 className[100], methodName[100];
-    sscanf(line, "Callback Called! %[^:]:%s", className, methodName);
-    // 새 콜백 생성
-    *currentCallback = createCallback(className, methodName);
-  } else if (strstr(line, "CallStack Start")) {
-    *inCallstack = 1;
-  } else if (strstr(line, "CallStack End")) {
-    *inCallstack = 0;
-    if (*currentCallback != NULL) {
-      addCallback(list, *currentCallback);
-      *currentCallback = NULL;
-      // currentCallback은 리스트에 추가된 후 바로 다음 콜백을 위해 초기화하지
-      // 않음
-    }
-  } else if (*inCallstack && *currentCallback &&
-             !strstr(line, "for i in traceback.extract_stack")) {
-    addCallStack((*currentCallback)->callStack, line);
-  }
-}
 
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update afl->fsrv->trace_bits. */

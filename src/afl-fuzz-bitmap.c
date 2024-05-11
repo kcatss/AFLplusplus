@@ -24,8 +24,6 @@
  */
 
 #include "afl-fuzz.h"
-#include "rb_data.h"
-#include "rb.h"
 
 #include <limits.h>
 #if !defined NAME_MAX
